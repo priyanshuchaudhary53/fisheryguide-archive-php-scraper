@@ -36,6 +36,8 @@ $dataAdded = 0;
 
 foreach ($urls as $url) {
 
+    $type = 'collection';
+
     $stmt = $db->prepare('SELECT COUNT(*) FROM main WHERE source_url = :source_url');
     $stmt->bindParam(':source_url', $url, PDO::PARAM_STR);
     $stmt->execute();
@@ -93,11 +95,12 @@ foreach ($urls as $url) {
     $placeJson = placeDetailsJson($placeListItem);
 
     // prepare insert query
-    $stmt = $db->prepare('INSERT INTO main (source_url, page_title, page_text, location, place_details) VALUES (:source_url, :page_title, :page_text, :location, :place_details)');
+    $stmt = $db->prepare('INSERT INTO main (source_url, type, title, page_text, location, place_details) VALUES (:source_url, :type, :title, :page_text, :location, :place_details)');
 
     // bind parameters
     $stmt->bindParam(':source_url', $url, PDO::PARAM_STR);
-    $stmt->bindParam(':page_title', $page_title, PDO::PARAM_STR);
+    $stmt->bindParam(':type', $type, PDO::PARAM_STR);
+    $stmt->bindParam(':title', $page_title, PDO::PARAM_STR);
     $stmt->bindParam(':page_text', $page_text, PDO::PARAM_STR);
     $stmt->bindParam(':location', $location, PDO::PARAM_STR);
     $stmt->bindParam(':place_details', $placeJson, PDO::PARAM_STR);
@@ -106,6 +109,8 @@ foreach ($urls as $url) {
     $stmt->execute();
 
     $dataAdded++;
+
+    echo 'Added query for url: ' . $url . PHP_EOL;
 }
 
 echo 'Execution finished! ' . $dataAdded . ' new query added into the database.';
