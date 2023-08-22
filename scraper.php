@@ -3,6 +3,8 @@
 require 'vendor/autoload.php';
 require 'location.php';
 require 'place.php';
+require 'htmlcontentparser.php';
+require 'stripattributes.php';
 
 use GuzzleHttp\Client;
 use PHPHtmlParser\Dom;
@@ -59,43 +61,54 @@ foreach ($urls as $url) {
     $articleDiv = $dom->find('article .inside-article')[0];
 
     // page title
+    $page_title = null;
     $headerDiv = $articleDiv->find('header');
-    $titleH1 = $headerDiv->find('h1');
-    $titleInnerSpan = $titleH1->find('span');
-    foreach ($titleInnerSpan as $span) {
-        $span->delete();
+    if ($headerDiv) {
+        $titleH1 = $headerDiv->find('h1');
+        if ($titleH1) {
+            $titleInnerSpan = $titleH1->find('span');
+            foreach ($titleInnerSpan as $span) {
+                $span->delete();
+            }
+            unset($titleInnerSpan);
+            $page_title = strip_tags($titleH1);
+        }
     }
-    unset($titleInnerSpan);
-    $page_title = strip_tags($titleH1);
 
-    // page text
-    $entryContentDiv = $articleDiv->find('.entry-content')[0];
-    $pageTextP = $entryContentDiv->find('p')[0];
-    $pageText_aTags = $pageTextP->find('a');
-    foreach ($pageText_aTags as $a) {
-        $id = $a->id();
-        $innerhtml = $a->innerHtml;
-        $textnode = new TextNode($innerhtml);
-        $a->getParent()->replaceChild($id, $textnode);
-    }
-    $page_text = strip_tags($pageTextP);
 
     // location
     $location = null;
-    $locationArr = json_decode($locationJson, true);
-    $city = getCity($locationArr, $page_title);
-    $county = getCounty($locationArr, $city);
-    if ($city & $county) {
-        $location = $county . '::' . $city;
+    if ($page_title && $page_title !== '') {
+        $location = findLocation($page_title);
     }
 
     // place details
-    $placeUl = $entryContentDiv->find('ul')[0];
-    $placeListItem = $placeUl->find('li');
-    $placeJson = placeDetailsJson($placeListItem);
+    $placeJson = null;
+    $entryContent = $dom->find('.entry-content')[0];
+    $placeUl = $entryContent->find('ul')[0];
+    if ($placeUl) {
+        $placeListItem = $placeUl->find('li');
+        $placeJson = placeDetailsJson($placeListItem);
+    }
+
+    // table
+    $table = null;
+    $entryContent = $dom->find('.entry-content')[0];
+    $tableTag = $entryContent->find('table')[0];
+    if ($tableTag) {
+        $table = stripAttributes($tableTag);
+    }
+
+    // page text
+    $page_text = null;
+    $entryContentDiv = $articleDiv->find('.entry-content')[0];
+    if ($entryContentDiv) {
+        $pageHtml = processHtmlContent($entryContentDiv);
+        $page_text = trim(strip_tags($pageHtml->innerHtml));
+    }
 
     // prepare insert query
-    $stmt = $db->prepare('INSERT INTO main (source_url, type, title, page_text, location, place_details) VALUES (:source_url, :type, :title, :page_text, :location, :place_details)');
+    $stmt = $db->prepare('INSERT INTO main (source_url, type, title, page_text, location, place_details, html_table) VALUES (:source_url, :type, :title, :page_text, :location, :place_details, :html_table)');
 
     // bind parameters
     $stmt->bindParam(':source_url', $url, PDO::PARAM_STR);
@@ -104,6 +117,7 @@ foreach ($urls as $url) {
     $stmt->bindParam(':page_text', $page_text, PDO::PARAM_STR);
     $stmt->bindParam(':location', $location, PDO::PARAM_STR);
     $stmt->bindParam(':place_details', $placeJson, PDO::PARAM_STR);
+    $stmt->bindParam(':html_table', $table, PDO::PARAM_STR);
 
 
     $stmt->execute();
